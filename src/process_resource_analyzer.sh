@@ -57,10 +57,14 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 section "Collection metadata" bash -c 'date -Is; hostname -f 2>/dev/null || hostname; cat /etc/os-release 2>/dev/null || true; uname -a; uptime'
 section "Memory and swap" bash -c 'free -h; swapon --show 2>/dev/null || true'
+# Variables expand inside the child bash process.
+# shellcheck disable=SC2016
 section "Pressure stall information" bash -c 'for f in /proc/pressure/cpu /proc/pressure/memory /proc/pressure/io; do [[ -r "$f" ]] && { echo "--- $f"; cat "$f"; }; done'
 section "System limits" bash -c 'ulimit -a; sysctl fs.file-max kernel.pid_max 2>/dev/null || true; cat /proc/sys/fs/file-nr 2>/dev/null || true'
 section "Top CPU processes" bash -c "ps -eo pid,user,state,pcpu,pmem,rss,vsz,nlwp,etimes,comm,args --sort=-pcpu | head -n $((TOP_N + 1))"
 section "Top memory processes" bash -c "ps -eo pid,user,state,pcpu,pmem,rss,vsz,nlwp,etimes,comm,args --sort=-rss | head -n $((TOP_N + 1))"
+# The awk field expression is evaluated by the child shell.
+# shellcheck disable=SC2016
 section "Zombie and uninterruptible processes" bash -c 'ps -eo pid,ppid,user,state,etimes,comm,args | awk "NR==1 || $4 ~ /^[ZD]/"'
 section "Kernel resource warnings" bash -c 'journalctl -k --since "24 hours ago" --no-pager 2>/dev/null | grep -Ei "out of memory|oom-killer|killed process|hung task|blocked for more than|fork: retry|resource temporarily unavailable|too many open files" | tail -n 1000 || true'
 
@@ -92,8 +96,8 @@ if have pidstat; then
   section "pidstat sample" pidstat -durwt 1 3
 fi
 
-ZOMBIES="$(ps -eo state= | grep -c '^Z' || true)"
-UNINTERRUPTIBLE="$(ps -eo state= | grep -c '^D' || true)"
+ZOMBIES="$(ps -eo state= | awk '$1 ~ /^Z/ {count++} END {print count+0}')"
+UNINTERRUPTIBLE="$(ps -eo state= | awk '$1 ~ /^D/ {count++} END {print count+0}')"
 HIGH_FD="$(awk -F, 'NR>1 && $10>=1024 {c++} END {print c+0}' "$CSV")"
 HIGH_THREADS="$(awk -F, 'NR>1 && $8>=500 {c++} END {print c+0}' "$CSV")"
 GROWING="$(awk -F, 'NR>1 && $5>=10240 {c++} END {print c+0}' "$GROWTH_CSV")"
